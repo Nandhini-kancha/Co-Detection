@@ -1,241 +1,388 @@
 """
-Dataset Download & Preparation Script
-Downloads real chest X-ray datasets for training.
+Download the 3 required datasets for Chest X-ray Co-Detection:
+1. NIH ChestX-ray14 (Pneumonia labels)
+2. Shenzhen TB Dataset
+3. RSNA Pneumonia Detection Dataset
 
-Supported datasets:
-1. Shenzhen TB Dataset (small, ~100MB) - Downloads automatically
-2. NIH ChestX-ray14 (large, ~45GB) - Provides instructions
-3. RSNA Pneumonia (large, ~30GB) - Provides Kaggle instructions
+Prerequisites:
+    1. Create Kaggle account at https://www.kaggle.com
+    2. Go to Settings > API > Create New Token
+    3. Place kaggle.json at C:\\Users\\<user>\\.kaggle\\kaggle.json
 
 Usage:
-    python download_datasets.py --dataset shenzhen
-    python download_datasets.py --dataset all
+    python download_datasets.py                    # Download all 3
+    python download_datasets.py --dataset nih      # Only NIH
+    python download_datasets.py --dataset shenzhen # Only Shenzhen TB
+    python download_datasets.py --dataset rsna     # Only RSNA
+    python download_datasets.py --small            # Download small subsets
 """
 
 import os
 import sys
 import argparse
-import urllib.request
-import zipfile
-import tarfile
 import shutil
+import csv
+import random
 from pathlib import Path
 
 
-def download_file(url, dest_path, description="file"):
-    """Download a file with progress bar."""
-    print(f"Downloading {description}...")
-    print(f"  URL: {url}")
-    print(f"  Destination: {dest_path}")
-    
-    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-    
-    def progress_hook(block_num, block_size, total_size):
-        downloaded = block_num * block_size
-        if total_size > 0:
-            percent = min(100, downloaded * 100 / total_size)
-            mb_down = downloaded / (1024 * 1024)
-            mb_total = total_size / (1024 * 1024)
-            sys.stdout.write(f"\r  Progress: {percent:.1f}% ({mb_down:.1f}/{mb_total:.1f} MB)")
-            sys.stdout.flush()
-    
-    urllib.request.urlretrieve(url, dest_path, progress_hook)
-    print("\n  Download complete!")
-
-
-def setup_shenzhen_tb(data_dir):
-    """
-    Download and prepare the Shenzhen TB dataset.
-    Source: National Library of Medicine
-    ~662 frontal chest X-rays (326 normal, 336 TB)
-    """
-    dataset_dir = os.path.join(data_dir, "shenzhen")
-    images_dir = os.path.join(dataset_dir, "images")
-    
-    if os.path.exists(images_dir) and len(os.listdir(images_dir)) > 100:
-        print("Shenzhen TB dataset already exists. Skipping download.")
+def check_kaggle_credentials():
+    """Check if Kaggle API credentials are configured."""
+    kaggle_json = os.path.join(os.path.expanduser("~"), ".kaggle", "kaggle.json")
+    if os.path.exists(kaggle_json):
+        print("[OK] Kaggle credentials found")
         return True
     
+    # Also check environment variables
+    if os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"):
+        print("[OK] Kaggle credentials found (env vars)")
+        return True
+    
+    print("[ERROR] Kaggle credentials not found!")
+    print()
+    print("  Setup instructions:")
+    print("  1. Go to https://www.kaggle.com and sign up (free)")
+    print("  2. Click profile icon > Settings")
+    print("  3. Scroll to API section > Create New Token")
+    print("  4. Move downloaded kaggle.json to:")
+    print(f"     {kaggle_json}")
+    print()
+    return False
+
+
+def download_nih_chestxray14(data_dir, small=False):
+    """Download NIH ChestX-ray14 dataset from Kaggle."""
     print("=" * 60)
-    print("SHENZHEN TB DATASET")
+    print("1. NIH CHESTX-RAY14 DATASET")
     print("=" * 60)
-    print("Source: U.S. National Library of Medicine")
-    print("Size: ~100 MB")
-    print("Images: 662 frontal CXRs (326 normal, 336 TB positive)")
+    print("   112,120 frontal chest X-rays, 14 disease labels")
+    print("   Size: ~45 GB (full) / ~1 GB sample")
     print()
     
-    os.makedirs(images_dir, exist_ok=True)
+    output_dir = os.path.join(data_dir, "nih")
+    os.makedirs(output_dir, exist_ok=True)
     
-    # The Shenzhen dataset is available from the NLM
-    # Direct download URL
-    zip_url = "https://openi.nlm.nih.gov/imgs/collections/ChinaSet_AllFiles.zip"
-    zip_path = os.path.join(dataset_dir, "ChinaSet_AllFiles.zip")
+    # Check if already downloaded
+    csv_path = os.path.join(output_dir, "Data_Entry_2017.csv")
+    images_dir = os.path.join(output_dir, "images")
+    
+    if os.path.exists(csv_path) and os.path.exists(images_dir):
+        img_count = len([f for f in os.listdir(images_dir) if f.endswith('.png')])
+        if img_count > 100:
+            print(f"   Already downloaded ({img_count} images). Skipping.")
+            return True
     
     try:
-        download_file(zip_url, zip_path, "Shenzhen TB Dataset")
+        import opendatasets as od
         
-        print("  Extracting...")
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            zf.extractall(dataset_dir)
+        if small:
+            # Download sample dataset (smaller)
+            print("   Downloading NIH sample dataset...")
+            od.download(
+                "https://www.kaggle.com/datasets/nih-chest-xrays/sample",
+                data_dir=data_dir
+            )
+            # Reorganize
+            sample_dir = os.path.join(data_dir, "sample")
+            if os.path.exists(sample_dir):
+                # Move files to nih directory
+                for f in os.listdir(sample_dir):
+                    src = os.path.join(sample_dir, f)
+                    dst = os.path.join(output_dir, f)
+                    if not os.path.exists(dst):
+                        shutil.move(src, dst)
+                # Rename sample_images to images
+                sample_images = os.path.join(output_dir, "sample", "images")
+                if os.path.exists(sample_images) and not os.path.exists(images_dir):
+                    shutil.move(sample_images, images_dir)
+        else:
+            print("   Downloading full NIH ChestX-ray14 dataset...")
+            print("   WARNING: This is ~45 GB and will take a long time!")
+            od.download(
+                "https://www.kaggle.com/datasets/nih-chest-xrays/data",
+                data_dir=data_dir
+            )
+            downloaded = os.path.join(data_dir, "data")
+            if os.path.exists(downloaded):
+                for f in os.listdir(downloaded):
+                    src = os.path.join(downloaded, f)
+                    dst = os.path.join(output_dir, f)
+                    if not os.path.exists(dst):
+                        shutil.move(src, dst)
         
-        # Move images to the expected location
-        extracted_dir = os.path.join(dataset_dir, "ChinaSet_AllFiles", "CXR_png")
-        if os.path.exists(extracted_dir):
-            for f in os.listdir(extracted_dir):
-                if f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                    shutil.move(os.path.join(extracted_dir, f), os.path.join(images_dir, f))
-        
-        # Clean up zip
-        os.remove(zip_path)
-        
-        # Count images
-        count = len([f for f in os.listdir(images_dir) if f.lower().endswith(('.png', '.jpg'))])
-        print(f"  Successfully prepared {count} images in {images_dir}")
-        
-        # Create labels file for easier loading
-        create_shenzhen_labels(dataset_dir, images_dir)
-        
+        print("   NIH dataset download complete!")
         return True
         
     except Exception as e:
-        print(f"\n  Auto-download failed: {e}")
-        print("\n  MANUAL DOWNLOAD INSTRUCTIONS:")
-        print("  1. Visit: https://lhncbc.nlm.nih.gov/LHC-downloads/downloads.html#702702dc-9e4e-4e00-ae82-1a4e3bdd0b28")
-        print("  2. Download 'ChinaSet_AllFiles.zip'")
-        print(f"  3. Extract PNG images to: {images_dir}")
-        print("  4. Re-run this script")
+        print(f"   Download failed: {e}")
         return False
 
 
-def create_shenzhen_labels(dataset_dir, images_dir):
-    """Create a CSV labels file for the Shenzhen dataset."""
-    import csv
+def download_shenzhen_tb(data_dir):
+    """Download Shenzhen TB dataset."""
+    print("=" * 60)
+    print("2. SHENZHEN TB DATASET")
+    print("=" * 60)
+    print("   662 frontal CXRs (326 normal, 336 TB positive)")
+    print("   Size: ~100 MB")
+    print()
     
-    labels_path = os.path.join(dataset_dir, "labels.csv")
+    output_dir = os.path.join(data_dir, "shenzhen")
+    images_dir = os.path.join(output_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    
+    if os.path.exists(images_dir):
+        img_count = len([f for f in os.listdir(images_dir) if f.lower().endswith(('.png', '.jpg'))])
+        if img_count > 100:
+            print(f"   Already downloaded ({img_count} images). Skipping.")
+            return True
+    
+    try:
+        import opendatasets as od
+        
+        print("   Downloading from Kaggle...")
+        od.download(
+            "https://www.kaggle.com/datasets/raddar/tuberculosis-chest-xrays-shenzhen",
+            data_dir=data_dir
+        )
+        
+        # Reorganize downloaded files
+        dl_dir = os.path.join(data_dir, "tuberculosis-chest-xrays-shenzhen")
+        if os.path.exists(dl_dir):
+            for root, dirs, files in os.walk(dl_dir):
+                for f in files:
+                    if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        src = os.path.join(root, f)
+                        dst = os.path.join(images_dir, f)
+                        if not os.path.exists(dst):
+                            shutil.copy2(src, dst)
+        
+        # Create labels
+        create_shenzhen_labels(output_dir, images_dir)
+        
+        img_count = len([f for f in os.listdir(images_dir) if f.lower().endswith(('.png', '.jpg'))])
+        print(f"   Shenzhen TB download complete! ({img_count} images)")
+        return True
+        
+    except Exception as e:
+        print(f"   Kaggle download failed: {e}")
+        print("   Trying direct NLM download...")
+        return download_shenzhen_direct(data_dir)
+
+
+def download_shenzhen_direct(data_dir):
+    """Try downloading Shenzhen TB from NLM directly."""
+    import urllib.request
+    
+    output_dir = os.path.join(data_dir, "shenzhen")
+    images_dir = os.path.join(output_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    
+    urls_to_try = [
+        "https://data.lhncbc.nlm.nih.gov/public/Tuberculosis-Chest-X-ray-Datasets/Shenzhen-Hospital-CXR-Set/ChinaSet_AllFiles.zip",
+        "https://lhncbc.nlm.nih.gov/LHC-downloads/downloads/ChinaSet_AllFiles.zip",
+    ]
+    
+    for url in urls_to_try:
+        try:
+            zip_path = os.path.join(output_dir, "download.zip")
+            print(f"   Trying: {url}")
+            urllib.request.urlretrieve(url, zip_path)
+            
+            # Check if it's actually a zip
+            import zipfile
+            if zipfile.is_zipfile(zip_path):
+                with zipfile.ZipFile(zip_path, 'r') as zf:
+                    zf.extractall(output_dir)
+                os.remove(zip_path)
+                
+                # Find and move images
+                for root, dirs, files in os.walk(output_dir):
+                    for f in files:
+                        if f.lower().endswith(('.png', '.jpg')) and root != images_dir:
+                            src = os.path.join(root, f)
+                            dst = os.path.join(images_dir, f)
+                            if not os.path.exists(dst):
+                                shutil.move(src, dst)
+                
+                create_shenzhen_labels(output_dir, images_dir)
+                return True
+            else:
+                os.remove(zip_path)
+                
+        except Exception as e:
+            print(f"   Failed: {e}")
+            continue
+    
+    print("   All download methods failed for Shenzhen TB.")
+    print("   Manual download: https://lhncbc.nlm.nih.gov/LHC-downloads/downloads.html")
+    return False
+
+
+def create_shenzhen_labels(output_dir, images_dir):
+    """Create labels CSV for Shenzhen TB dataset."""
+    labels_path = os.path.join(output_dir, "labels.csv")
+    
+    records = []
+    for img_name in sorted(os.listdir(images_dir)):
+        if not img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+            continue
+        
+        # Shenzhen naming: CHNCXR_NNNN_0.png = normal, CHNCXR_NNNN_1.png = TB
+        is_tb = 1 if '_1.' in img_name or '_1_' in img_name else 0
+        records.append({
+            'filename': img_name,
+            'pneumonia': 0,
+            'tb': is_tb,
+            'normal': 1 if is_tb == 0 else 0
+        })
     
     with open(labels_path, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['filename', 'tb', 'normal'])
+        writer = csv.DictWriter(f, fieldnames=['filename', 'pneumonia', 'tb', 'normal'])
+        writer.writeheader()
+        writer.writerows(records)
+    
+    tb_count = sum(1 for r in records if r['tb'] == 1)
+    normal_count = sum(1 for r in records if r['normal'] == 1)
+    print(f"   Labels: {tb_count} TB, {normal_count} Normal -> {labels_path}")
+
+
+def download_rsna_pneumonia(data_dir, small=False):
+    """Download RSNA Pneumonia Detection dataset from Kaggle."""
+    print("=" * 60)
+    print("3. RSNA PNEUMONIA DETECTION DATASET")
+    print("=" * 60)
+    print("   26,684 chest X-rays with pneumonia bounding boxes")
+    print("   Size: ~30 GB (full)")
+    print()
+    
+    output_dir = os.path.join(data_dir, "rsna")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    csv_path = os.path.join(output_dir, "stage_2_train_labels.csv")
+    if os.path.exists(csv_path):
+        print("   Already downloaded. Skipping.")
+        return True
+    
+    try:
+        import opendatasets as od
         
-        for img_name in sorted(os.listdir(images_dir)):
-            if not img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                continue
-            
-            # Shenzhen naming convention:
-            # CHNCXR_NNNN_0.png = normal
-            # CHNCXR_NNNN_1.png = TB positive
-            if '_1.' in img_name or '_1_' in img_name:
-                writer.writerow([img_name, 1, 0])
-            else:
-                writer.writerow([img_name, 0, 1])
-    
-    print(f"  Labels saved to {labels_path}")
+        if small:
+            print("   Downloading RSNA dataset (competition files)...")
+        else:
+            print("   Downloading full RSNA Pneumonia dataset...")
+            print("   WARNING: This is ~30 GB and will take a long time!")
+        
+        od.download(
+            "https://www.kaggle.com/competitions/rsna-pneumonia-detection-challenge",
+            data_dir=data_dir
+        )
+        
+        # Reorganize
+        dl_dir = os.path.join(data_dir, "rsna-pneumonia-detection-challenge")
+        if os.path.exists(dl_dir):
+            for f in os.listdir(dl_dir):
+                src = os.path.join(dl_dir, f)
+                dst = os.path.join(output_dir, f)
+                if not os.path.exists(dst):
+                    shutil.move(src, dst)
+        
+        print("   RSNA download complete!")
+        return True
+        
+    except Exception as e:
+        print(f"   Download failed: {e}")
+        print("   You may need to accept competition rules at:")
+        print("   https://www.kaggle.com/c/rsna-pneumonia-detection-challenge/rules")
+        return False
 
 
-def setup_nih_instructions(data_dir):
-    """Print instructions for downloading NIH ChestX-ray14."""
-    dataset_dir = os.path.join(data_dir, "nih")
-    
+def print_summary(data_dir):
+    """Print summary of downloaded datasets."""
+    print()
     print("=" * 60)
-    print("NIH CHESTX-RAY14 DATASET")
+    print("DOWNLOAD SUMMARY")
     print("=" * 60)
-    print("Size: ~45 GB (112,120 frontal chest X-rays)")
-    print("Labels: 14 pathology classes including Pneumonia")
-    print()
-    print("DOWNLOAD INSTRUCTIONS:")
-    print()
-    print("  Option A - NIH Box (Recommended):")
-    print("  1. Visit: https://nihcc.app.box.com/v/ChestXray-NIHCC")
-    print("  2. Download all image zip files (images_001.tar.gz to images_012.tar.gz)")
-    print("  3. Download 'Data_Entry_2017.csv'")
-    print(f"  4. Extract all images to: {os.path.join(dataset_dir, 'images')}")
-    print(f"  5. Place CSV at: {os.path.join(dataset_dir, 'Data_Entry_2017.csv')}")
-    print()
-    print("  Option B - Kaggle:")
-    print("  1. Visit: https://www.kaggle.com/datasets/nih-chest-xrays/data")
-    print("  2. Download and extract")
-    print(f"  3. Organize into: {dataset_dir}")
-    print()
-    print(f"  Expected structure:")
-    print(f"    {dataset_dir}/")
-    print(f"      Data_Entry_2017.csv")
-    print(f"      images/")
-    print(f"        00000001_000.png")
-    print(f"        00000001_001.png")
-    print(f"        ...")
-    print()
     
-    os.makedirs(os.path.join(dataset_dir, "images"), exist_ok=True)
-
-
-def setup_rsna_instructions(data_dir):
-    """Print instructions for downloading RSNA Pneumonia dataset."""
-    dataset_dir = os.path.join(data_dir, "rsna")
+    total = 0
     
+    # NIH
+    nih_dir = os.path.join(data_dir, "nih", "images")
+    if os.path.exists(nih_dir):
+        count = len([f for f in os.listdir(nih_dir) if f.endswith('.png')])
+        print(f"  NIH ChestX-ray14:    {count:>6} images")
+        total += count
+    else:
+        print(f"  NIH ChestX-ray14:    NOT FOUND")
+    
+    # Shenzhen
+    shenzhen_dir = os.path.join(data_dir, "shenzhen", "images")
+    if os.path.exists(shenzhen_dir):
+        count = len([f for f in os.listdir(shenzhen_dir) if f.lower().endswith(('.png', '.jpg'))])
+        print(f"  Shenzhen TB:         {count:>6} images")
+        total += count
+    else:
+        print(f"  Shenzhen TB:         NOT FOUND")
+    
+    # RSNA
+    rsna_dir = os.path.join(data_dir, "rsna")
+    rsna_csv = os.path.join(rsna_dir, "stage_2_train_labels.csv")
+    if os.path.exists(rsna_csv):
+        import pandas as pd
+        df = pd.read_csv(rsna_csv)
+        count = df['patientId'].nunique()
+        print(f"  RSNA Pneumonia:      {count:>6} images")
+        total += count
+    else:
+        print(f"  RSNA Pneumonia:      NOT FOUND")
+    
+    print(f"  {'':>19}  ------")
+    print(f"  Total:               {total:>6} images")
+    
+    print()
+    print("NEXT STEPS:")
+    print("  Train on the downloaded data:")
+    print(f"  python train.py --data_dir {data_dir} --epochs 20 --batch_size 16 --num_workers 0")
     print("=" * 60)
-    print("RSNA PNEUMONIA DETECTION DATASET")
-    print("=" * 60)
-    print("Size: ~30 GB (26,684 chest X-rays with bounding boxes)")
-    print("Source: Kaggle Competition")
-    print()
-    print("DOWNLOAD INSTRUCTIONS:")
-    print()
-    print("  1. Install Kaggle CLI: pip install kaggle")
-    print("  2. Set up Kaggle API credentials (~/.kaggle/kaggle.json)")
-    print("  3. Run:")
-    print("     kaggle competitions download -c rsna-pneumonia-detection-challenge")
-    print(f"  4. Extract to: {dataset_dir}")
-    print()
-    print("  OR manually:")
-    print("  1. Visit: https://www.kaggle.com/c/rsna-pneumonia-detection-challenge/data")
-    print("  2. Download 'stage_2_train_labels.csv' and 'stage_2_train_images'")
-    print(f"  3. Place in: {dataset_dir}")
-    print()
-    print(f"  Expected structure:")
-    print(f"    {dataset_dir}/")
-    print(f"      stage_2_train_labels.csv")
-    print(f"      stage_2_train_images/")
-    print(f"        patient_id.dcm")
-    print(f"        ...")
-    print()
-    
-    os.makedirs(os.path.join(dataset_dir, "stage_2_train_images"), exist_ok=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description='Download chest X-ray datasets')
-    parser.add_argument('--dataset', type=str, default='shenzhen',
-                        choices=['shenzhen', 'nih', 'rsna', 'all'],
-                        help='Which dataset to download/setup')
-    parser.add_argument('--data_dir', type=str, default='./data',
-                        help='Root data directory')
+    parser.add_argument('--dataset', type=str, default='all',
+                        choices=['nih', 'shenzhen', 'rsna', 'all'],
+                        help='Which dataset to download')
+    parser.add_argument('--data_dir', type=str, default='./data')
+    parser.add_argument('--small', action='store_true',
+                        help='Download small sample instead of full dataset')
     args = parser.parse_args()
     
     os.makedirs(args.data_dir, exist_ok=True)
     
     print()
-    print("Chest X-Ray Dataset Setup")
+    print("Chest X-Ray Dataset Downloader")
     print("=" * 60)
     print(f"Data directory: {os.path.abspath(args.data_dir)}")
     print()
     
+    # Check credentials
+    if not check_kaggle_credentials():
+        sys.exit(1)
+    
+    print()
+    
     if args.dataset in ('shenzhen', 'all'):
-        setup_shenzhen_tb(args.data_dir)
+        download_shenzhen_tb(args.data_dir)
         print()
     
     if args.dataset in ('nih', 'all'):
-        setup_nih_instructions(args.data_dir)
+        download_nih_chestxray14(args.data_dir, small=args.small)
         print()
     
     if args.dataset in ('rsna', 'all'):
-        setup_rsna_instructions(args.data_dir)
+        download_rsna_pneumonia(args.data_dir, small=args.small)
         print()
     
-    print("=" * 60)
-    print("NEXT STEPS:")
-    print("  After downloading datasets, train the model:")
-    print(f"  python train.py --data_dir {args.data_dir} --epochs 30 --batch_size 32")
-    print("=" * 60)
+    print_summary(args.data_dir)
 
 
 if __name__ == '__main__':

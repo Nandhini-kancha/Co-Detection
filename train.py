@@ -170,8 +170,47 @@ def create_unified_dataset(data_dir):
     """Merge all datasets into a unified format."""
     print("Loading datasets...")
     
+    # Check for pre-built unified CSV (from download_real_data.py)
+    unified_csv = os.path.join(data_dir, 'unified_labels.csv')
+    if os.path.exists(unified_csv):
+        print(f"  Found unified labels at {unified_csv}")
+        df = pd.read_csv(unified_csv)
+        # Filter to only existing images
+        df = df[df['image_path'].apply(os.path.exists)]
+        if len(df) > 0:
+            print(f"  Unified dataset: {len(df)} images")
+            print(f"    Pneumonia: {df['pneumonia'].astype(int).sum()}")
+            print(f"    TB: {df['tb'].astype(int).sum()}")
+            print(f"    Normal: {df['normal'].astype(int).sum()}")
+            return df
+    
     dfs = []
     
+    # Load HuggingFace-downloaded pneumonia dataset
+    pneumonia_labels = os.path.join(data_dir, 'pneumonia', 'labels.csv')
+    if os.path.exists(pneumonia_labels):
+        pn_df = pd.read_csv(pneumonia_labels)
+        pn_df['image_path'] = pn_df['filename'].apply(
+            lambda f: os.path.join(data_dir, 'pneumonia', 'images', f))
+        pn_df['source'] = 'pneumonia_hf'
+        pn_df = pn_df[pn_df['image_path'].apply(os.path.exists)]
+        if len(pn_df) > 0:
+            print(f"  Pneumonia (HuggingFace): {len(pn_df)} images")
+            dfs.append(pn_df[['image_path', 'pneumonia', 'tb', 'normal', 'source']])
+    
+    # Load HuggingFace-downloaded TB dataset
+    tb_labels = os.path.join(data_dir, 'tb_hf', 'labels.csv')
+    if os.path.exists(tb_labels):
+        tb_df = pd.read_csv(tb_labels)
+        tb_df['image_path'] = tb_df['filename'].apply(
+            lambda f: os.path.join(data_dir, 'tb_hf', 'images', f))
+        tb_df['source'] = 'tb_hf'
+        tb_df = tb_df[tb_df['image_path'].apply(os.path.exists)]
+        if len(tb_df) > 0:
+            print(f"  TB (HuggingFace): {len(tb_df)} images")
+            dfs.append(tb_df[['image_path', 'pneumonia', 'tb', 'normal', 'source']])
+    
+    # Load original datasets
     nih_df = load_nih_chestxray14(data_dir)
     if len(nih_df) > 0:
         print(f"  NIH ChestX-ray14: {len(nih_df)} images")
@@ -193,9 +232,9 @@ def create_unified_dataset(data_dir):
     
     unified = pd.concat(dfs, ignore_index=True)
     print(f"\nUnified dataset: {len(unified)} total images")
-    print(f"  Pneumonia positive: {unified['pneumonia'].sum()}")
-    print(f"  TB positive: {unified['tb'].sum()}")
-    print(f"  Normal: {unified['normal'].sum()}")
+    print(f"  Pneumonia positive: {unified['pneumonia'].astype(int).sum()}")
+    print(f"  TB positive: {unified['tb'].astype(int).sum()}")
+    print(f"  Normal: {unified['normal'].astype(int).sum()}")
     
     return unified
 
