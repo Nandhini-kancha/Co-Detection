@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #020617;
+  color: #e2e8f0;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Glass card utility */
+.glass-card {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  border-radius: 16px;
+}
+
+.glass-card-lighter {
+  background: rgba(30, 41, 59, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(71, 85, 105, 0.3);
+  border-radius: 12px;
+}
+
+/* Animated gradient border */
+.gradient-border {
+  position: relative;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, #06b6d4, #8b5cf6, #06b6d4);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: borderRotate 4s linear infinite;
+}
+
+@keyframes borderRotate {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Severity badge animations */
+.severity-pulse {
+  animation: severityPulse 2s ease-in-out infinite;
+}
+@keyframes severityPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Upload zone styles */
+.upload-zone {
+  border: 2px dashed rgba(6, 182, 212, 0.3);
+  transition: all 0.3s ease;
+}
+.upload-zone:hover,
+.upload-zone.drag-over {
+  border-color: rgba(6, 182, 212, 0.7);
+  background: rgba(6, 182, 212, 0.05);
+  box-shadow: 0 0 30px rgba(6, 182, 212, 0.1);
+}

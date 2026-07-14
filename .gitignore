@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.env
+venv/
+env/
+
+# PyTorch checkpoints
+checkpoints/
+*.pth
+*.pt
+
+# Data
+data/
+*.dcm
+*.dicom
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
