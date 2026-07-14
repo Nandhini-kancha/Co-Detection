@@ -34,6 +34,71 @@ model = None
 grad_cam_engine = None
 transform = None
 
+
+def validate_chest_xray(image: Image.Image) -> tuple:
+    """
+    Validate whether an uploaded image looks like a chest X-ray.
+    Returns (is_valid, reason) tuple.
+    
+    Checks:
+    1. Image is predominantly grayscale (X-rays are grayscale)
+    2. Image dimensions are reasonable (not tiny icons or extreme aspect ratios)
+    3. Pixel intensity distribution matches X-ray characteristics
+    """
+    width, height = image.size
+    
+    # Check 1: Minimum dimensions - X-rays should be at least 100x100
+    if width < 100 or height < 100:
+        return False, "Image is too small. Chest X-rays should be at least 100x100 pixels."
+    
+    # Check 2: Aspect ratio - chest X-rays are roughly square or portrait (0.5 to 2.0)
+    aspect_ratio = width / height
+    if aspect_ratio < 0.3 or aspect_ratio > 3.0:
+        return False, "Invalid aspect ratio. This does not appear to be a chest X-ray image."
+    
+    # Check 3: Grayscale check - X-rays are predominantly grayscale
+    # Convert to RGB and check if color channels are similar
+    rgb_image = image.convert('RGB')
+    img_array = np.array(rgb_image)
+    
+    # Sample center region (avoid borders)
+    h, w = img_array.shape[:2]
+    margin_h, margin_w = h // 4, w // 4
+    center = img_array[margin_h:h-margin_h, margin_w:w-margin_w]
+    
+    r, g, b = center[:,:,0].astype(float), center[:,:,1].astype(float), center[:,:,2].astype(float)
+    
+    # Calculate mean absolute difference between channels
+    rg_diff = np.mean(np.abs(r - g))
+    rb_diff = np.mean(np.abs(r - b))
+    gb_diff = np.mean(np.abs(g - b))
+    avg_color_diff = (rg_diff + rb_diff + gb_diff) / 3.0
+    
+    # X-rays have very low color difference (< 15), colorful images have high (> 30)
+    if avg_color_diff > 35:
+        return False, "This appears to be a color photograph, not a chest X-ray. Please upload a grayscale chest X-ray image."
+    
+    # Check 4: Intensity distribution - X-rays have a wide dynamic range
+    gray = np.array(image.convert('L'))
+    std_dev = np.std(gray)
+    
+    # Very low std means solid/uniform color image (not an X-ray)
+    if std_dev < 10:
+        return False, "Image has insufficient contrast. This does not appear to be a medical X-ray image."
+    
+    # Check 5: X-rays typically have dark regions (lungs) and bright regions (bones)
+    # Check that there's meaningful content in both dark and bright ranges
+    dark_fraction = np.mean(gray < 80)
+    bright_fraction = np.mean(gray > 180)
+    
+    if dark_fraction < 0.05 and bright_fraction < 0.05:
+        # Image is all mid-tones, unlikely to be an X-ray
+        if avg_color_diff > 20:
+            return False, "This does not appear to be a chest X-ray. Please upload a valid chest X-ray image."
+    
+    return True, "Valid"
+
+
 @app.on_event("startup")
 async def startup():
     global model, grad_cam_engine, transform
@@ -64,7 +129,12 @@ async def predict(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(BytesIO(contents)).convert('RGB')
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
+    
+    # Validate that the image is a chest X-ray
+    is_valid, reason = validate_chest_xray(image)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=reason)
     
     input_tensor = transform(image).unsqueeze(0).to(DEVICE)
     
@@ -72,7 +142,6 @@ async def predict(file: UploadFile = File(...)):
     input_tensor.requires_grad_(True)
     
     # Run Grad-CAM (also gets model output)
-    # Find the class with highest activation for heatmap
     with torch.enable_grad():
         cam, output = grad_cam_engine.generate(input_tensor)
     

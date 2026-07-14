@@ -95,28 +95,44 @@ def load_nih_chestxray14(data_dir):
 def load_shenzhen_tb(data_dir):
     """Load Shenzhen TB dataset."""
     tb_dir = os.path.join(data_dir, 'shenzhen')
+    images_dir = os.path.join(tb_dir, 'images')
     
-    if not os.path.exists(tb_dir):
+    if not os.path.exists(images_dir):
         print(f"Shenzhen TB dataset not found at {tb_dir}")
         return pd.DataFrame()
     
     records = []
     
-    for img_name in os.listdir(os.path.join(tb_dir, 'images')):
-        if not img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-            continue
-        
-        # Convention: filenames starting with 'CHNCXR' followed by patient number
-        # TB positive images are typically in a separate folder or denoted in metadata
-        is_tb = 1 if '_1' in img_name or 'tb' in img_name.lower() else 0
-        
-        records.append({
-            'image_path': os.path.join(tb_dir, 'images', img_name),
-            'pneumonia': 0,
-            'tb': is_tb,
-            'normal': 1 if is_tb == 0 else 0,
-            'source': 'shenzhen'
-        })
+    # Try loading from labels CSV first (more reliable)
+    labels_csv = os.path.join(tb_dir, 'labels.csv')
+    if os.path.exists(labels_csv):
+        labels_df = pd.read_csv(labels_csv)
+        for _, row in labels_df.iterrows():
+            img_path = os.path.join(images_dir, row['filename'])
+            if os.path.exists(img_path):
+                records.append({
+                    'image_path': img_path,
+                    'pneumonia': 0,
+                    'tb': int(row['tb']),
+                    'normal': int(row['normal']),
+                    'source': 'shenzhen'
+                })
+    else:
+        # Fallback: use filename convention
+        # CHNCXR_NNNN_0.png = normal, CHNCXR_NNNN_1.png = TB positive
+        for img_name in os.listdir(images_dir):
+            if not img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                continue
+            
+            is_tb = 1 if '_1.' in img_name or '_1_' in img_name else 0
+            
+            records.append({
+                'image_path': os.path.join(images_dir, img_name),
+                'pneumonia': 0,
+                'tb': is_tb,
+                'normal': 1 if is_tb == 0 else 0,
+                'source': 'shenzhen'
+            })
     
     return pd.DataFrame(records)
 
@@ -379,7 +395,7 @@ def main():
         if val_auc > best_auc:
             best_auc = val_auc
             torch.save(model.state_dict(), os.path.join(args.checkpoint_dir, 'best_model.pth'))
-            print(f"  ✓ Best model saved (AUC: {best_auc:.4f})")
+            print(f"  [*] Best model saved (AUC: {best_auc:.4f})")
         
         torch.save(model.state_dict(), os.path.join(args.checkpoint_dir, 'latest_model.pth'))
     
