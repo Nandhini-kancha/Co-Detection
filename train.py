@@ -368,6 +368,7 @@ def main():
     parser.add_argument('--checkpoint_dir', type=str, default='./backend/checkpoints')
     parser.add_argument('--device', type=str, default='auto')
     parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--subset', type=int, default=None, help='Sample a subset of the dataset to speed up training')
     args = parser.parse_args()
     
     # Device setup
@@ -379,6 +380,15 @@ def main():
     
     # Load data
     df = create_unified_dataset(args.data_dir)
+    
+    # Optional subset sampling
+    if args.subset and args.subset < len(df):
+        print(f"Subsampling dataset to {args.subset} images for faster training...")
+        # Try to stratify by source to keep distribution even
+        try:
+            df, _ = train_test_split(df, train_size=args.subset, random_state=42, stratify=df['source'])
+        except ValueError:
+            df = df.sample(n=args.subset, random_state=42)
     
     # Split
     train_df, val_df = train_test_split(df, test_size=0.2, random_state=42, stratify=df['source'] if 'source' in df.columns else None)
