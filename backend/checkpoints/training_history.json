@@ -1,0 +1,41 @@
+[
+  {
+    "epoch": 1,
+    "train_loss": 0.8623310446739196,
+    "train_auc": 0.7361199524297293,
+    "val_loss": 0.7994751930236816,
+    "val_auc": 0.8626914135844266,
+    "per_class_auc": {
+      "Pneumonia": 0.7497,
+      "Tuberculosis": 0.9955,
+      "Normal": 0.8429
+    },
+    "lr": 7.500000000000001e-05
+  },
+  {
+    "epoch": 2,
+    "train_loss": 0.6613002558549245,
+    "train_auc": 0.916972884927559,
+    "val_loss": 0.5884049758315086,
+    "val_auc": 0.9338976941212292,
+    "per_class_auc": {
+      "Pneumonia": 0.9097,
+      "Tuberculosis": 1.0,
+      "Normal": 0.892
+    },
+    "lr": 2.5000000000000015e-05
+  },
+  {
+    "epoch": 3,
+    "train_loss": 0.524027019739151,
+    "train_auc": 0.9623212468812685,
+    "val_loss": 0.5210276022553444,
+    "val_auc": 0.9501993771283873,
+    "per_class_auc": {
+      "Pneumonia": 0.9357,
+      "Tuberculosis": 1.0,
+      "Normal": 0.9149
+    },
+    "lr": 0.0
+  }
+]
